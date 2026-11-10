@@ -1,65 +1,38 @@
 import dlt
-from dlt.sources.filesystem import filesystem
 import duckdb
+import os
 
 def run_pipeline():
-    print("🚀 Memulai Pipeline: RustFS -> DuckDB -> Neon")
+    print("🚀 Memulai Pipeline: GitHub -> DuckDB -> Neon")
 
     # ==========================================
-    # TAHAP 1: EXTRACT (RustFS ke DuckDB)
+    # TAHAP 1: EXTRACT (Baca CSV dari Repository GitHub)
     # ==========================================
-    pipeline_extract = dlt.pipeline(
-        pipeline_name="rustfs_to_duckdb",
-        destination="duckdb",
-        dataset_name="raw_data"
-    )
+    # File CSV ada di folder yang sama dengan pipeline.py
+    csv_path = "data.csv"  # Ganti dengan nama file CSV kamu
     
-    # PERUBAHAN PENTING: "**/*" artinya ambil SEMUA file, tidak peduli formatnya (.csv, .json, dll)
-    source_files = filesystem(
-        bucket_url="s3://test-bucket/", 
-        file_glob="**/*" 
-    )
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"❌ File {csv_path} tidak ditemukan di repository!")
     
-    pipeline_extract.run(source_files)
-    print("✅ Data mentah berhasil ditarik dari RustFS ke DuckDB.")
+    print(f"📂 Membaca file: {csv_path}")
+    
+    # Load CSV ke DuckDB langsung
+    conn = duckdb.connect('pipeline.duckdb')
+    conn.execute(f"""
+        CREATE OR REPLACE TABLE raw_data AS 
+        SELECT * FROM read_csv_auto('{csv_path}')
+    """)
+    
+    row_count = conn.execute("SELECT COUNT(*) FROM raw_data").fetchone()[0]
+    print(f"✅ Berhasil membaca {row_count} baris data dari CSV.")
 
     # ==========================================
     # TAHAP 2: TRANSFORM (DuckDB SQL)
     # ==========================================
-    conn = duckdb.connect('rustfs_to_duckdb.duckdb')
-    
-    print("🔍 Mencari tabel data di DuckDB...")
-    tables_result = conn.execute("""
-        SELECT table_schema, table_name 
-        FROM information_schema.tables 
-        WHERE table_name NOT LIKE '_dlt_%'
-          AND table_schema NOT IN ('information_schema', 'pg_catalog')
-        LIMIT 1
-    """).fetchall()
-    
-    if not tables_result:
-        print("⚠️ PERINGATAN: Tidak ada tabel data ditemukan di DuckDB!")
-        print("💡 Kemungkinan besar bucket 'test-bucket' kosong atau tidak berisi file yang valid.")
-        print("💡 Pipeline dihentikan dengan aman.")
-        conn.close()
-        return # Keluar dari script dengan aman tanpa error merah
-        
-    source_schema = tables_result[0][0]
-    source_table = tables_result[0][1]
-    print(f"✅ Ditemukan tabel: {source_schema}.{source_table}")
-    
-    row_count = conn.execute(f"SELECT COUNT(*) FROM {source_schema}.{source_table}").fetchone()[0]
-    print(f"📊 Jumlah baris data: {row_count}")
-    
-    if row_count == 0:
-        print("⚠️ Tabel ditemukan tapi isinya kosong. Pipeline dihentikan.")
-        conn.close()
-        return
-
     print("🧹 Membersihkan data dengan DuckDB...")
-    conn.execute(f"""
+    conn.execute("""
         CREATE OR REPLACE TABLE clean_data AS 
-        SELECT * FROM {source_schema}.{source_table}
+        SELECT * FROM raw_data
     """)
     
     print("✅ Data berhasil ditransformasi di DuckDB.")
@@ -68,7 +41,7 @@ def run_pipeline():
     # TAHAP 3: LOAD (DuckDB ke Neon)
     # ==========================================
     pipeline_load = dlt.pipeline(
-        pipeline_name="duckdb_to_neon",
+        pipeline_name="github_to_neon",
         destination="postgres",
         dataset_name="analytics_data"
     )
@@ -86,4 +59,4 @@ def run_pipeline():
     conn.close()
 
 if __name__ == "__main__":
-    run_pipeline()
+    run_pipeline() 
