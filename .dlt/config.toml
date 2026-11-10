@@ -1,0 +1,6 @@
+[sources.filesystem]
+bucket_url = "s3://test-bucket/"
+file_glob = "**/*.csv"
+[destination.postgres]
+dataset_name = "retail_data"
+

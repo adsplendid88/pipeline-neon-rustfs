@@ -1,0 +1,5 @@
+venv/
+.dlt/secrets.toml
+.dlt/pipelines/
+__pycache__/
+*.pyc
