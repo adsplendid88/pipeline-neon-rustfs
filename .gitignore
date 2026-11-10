@@ -1,5 +1,12 @@
+# dlt - ignore seluruh folder
+.dlt/
+
+# Python
 venv/
-.dlt/secrets.toml
-.dlt/pipelines/
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+
+# Environment
+.env 
