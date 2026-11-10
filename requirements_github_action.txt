@@ -1,6 +1,3 @@
-cron-descriptor==2.2.1
-dlt==1.32.0
+dlt[duckdb,postgres,s3]
+duckdb
 pandas
-pipdeptree==2.9.6
-psycopg2-binary==2.9.13
-s3fs==2026.9.0
