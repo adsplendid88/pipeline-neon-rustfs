@@ -34,12 +34,12 @@ jobs:
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
-        python-version: 3.11.x
-    - uses: syphar/restore-virtualenv@v1
+        python-version: 3.11
+   # - uses: syphar/restore-virtualenv@v1
       id: cache-virtualenv
       with:
         requirement_files: requirements_github_action.txt
-    - uses: syphar/restore-pip-download-cache@v1
+    # - uses: syphar/restore-pip-download-cache@v1
       if: steps.cache-virtualenv.outputs.cache-hit != 'true'
     - run: pip install -r requirements_github_action.txt
       if: steps.cache-virtualenv.outputs.cache-hit != 'true'
