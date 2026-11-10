@@ -14,9 +14,10 @@ def run_pipeline():
         dataset_name="raw_data"
     )
     
+    # PERUBAHAN PENTING: "**/*" artinya ambil SEMUA file, tidak peduli formatnya (.csv, .json, dll)
     source_files = filesystem(
         bucket_url="s3://test-bucket/", 
-        file_glob="*.csv"
+        file_glob="**/*" 
     )
     
     pipeline_extract.run(source_files)
@@ -27,7 +28,6 @@ def run_pipeline():
     # ==========================================
     conn = duckdb.connect('rustfs_to_duckdb.duckdb')
     
-    # 🔍 AUTO-DETECT: Cari tabel data (abaikan tabel internal dlt)
     print("🔍 Mencari tabel data di DuckDB...")
     tables_result = conn.execute("""
         SELECT table_schema, table_name 
@@ -38,17 +38,24 @@ def run_pipeline():
     """).fetchall()
     
     if not tables_result:
-        raise Exception("❌ Tidak ada tabel data yang ditemukan di DuckDB!")
-    
+        print("⚠️ PERINGATAN: Tidak ada tabel data ditemukan di DuckDB!")
+        print("💡 Kemungkinan besar bucket 'test-bucket' kosong atau tidak berisi file yang valid.")
+        print("💡 Pipeline dihentikan dengan aman.")
+        conn.close()
+        return # Keluar dari script dengan aman tanpa error merah
+        
     source_schema = tables_result[0][0]
     source_table = tables_result[0][1]
     print(f"✅ Ditemukan tabel: {source_schema}.{source_table}")
     
-    # Tampilkan isi tabel untuk debugging
     row_count = conn.execute(f"SELECT COUNT(*) FROM {source_schema}.{source_table}").fetchone()[0]
     print(f"📊 Jumlah baris data: {row_count}")
     
-    # Transform: Bersihkan data (hapus baris kosong)
+    if row_count == 0:
+        print("⚠️ Tabel ditemukan tapi isinya kosong. Pipeline dihentikan.")
+        conn.close()
+        return
+
     print("🧹 Membersihkan data dengan DuckDB...")
     conn.execute(f"""
         CREATE OR REPLACE TABLE clean_data AS 
