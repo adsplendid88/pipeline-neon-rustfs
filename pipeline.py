@@ -14,33 +14,45 @@ def run_pipeline():
         dataset_name="raw_data"
     )
     
-    # PENTING: Beri nama resource secara eksplisit agar nama tabel di DuckDB jelas
-    # Kita beri nama "csv_files", jadi tabelnya nanti bernama 'csv_files'
     source_files = filesystem(
         bucket_url="s3://test-bucket/", 
         file_glob="*.csv"
-    ).with_name("csv_files")
+    )
     
     pipeline_extract.run(source_files)
     print("✅ Data mentah berhasil ditarik dari RustFS ke DuckDB.")
-    
-    # Hapus variabel python ini agar tidak bentrok dengan DuckDB saat query SQL
-    del source_files
 
     # ==========================================
     # TAHAP 2: TRANSFORM (DuckDB SQL)
     # ==========================================
-    # Koneksi ke file DuckDB lokal yang dibuat oleh dlt
     conn = duckdb.connect('rustfs_to_duckdb.duckdb')
     
-    print("🧹 Membersihkan data dengan DuckDB...")
+    # 🔍 AUTO-DETECT: Cari tabel data (abaikan tabel internal dlt)
+    print("🔍 Mencari tabel data di DuckDB...")
+    tables_result = conn.execute("""
+        SELECT table_schema, table_name 
+        FROM information_schema.tables 
+        WHERE table_name NOT LIKE '_dlt_%'
+          AND table_schema NOT IN ('information_schema', 'pg_catalog')
+        LIMIT 1
+    """).fetchall()
     
-    # Query SQL: Ambil semua data dari tabel 'csv_files' di schema 'raw_data'
-    # (Sesuaikan WHERE clause jika perlu, contoh di bawah ini mengambil semua baris)
-    conn.execute("""
+    if not tables_result:
+        raise Exception("❌ Tidak ada tabel data yang ditemukan di DuckDB!")
+    
+    source_schema = tables_result[0][0]
+    source_table = tables_result[0][1]
+    print(f"✅ Ditemukan tabel: {source_schema}.{source_table}")
+    
+    # Tampilkan isi tabel untuk debugging
+    row_count = conn.execute(f"SELECT COUNT(*) FROM {source_schema}.{source_table}").fetchone()[0]
+    print(f"📊 Jumlah baris data: {row_count}")
+    
+    # Transform: Bersihkan data (hapus baris kosong)
+    print("🧹 Membersihkan data dengan DuckDB...")
+    conn.execute(f"""
         CREATE OR REPLACE TABLE clean_data AS 
-        SELECT * 
-        FROM raw_data.csv_files
+        SELECT * FROM {source_schema}.{source_table}
     """)
     
     print("✅ Data berhasil ditransformasi di DuckDB.")
@@ -54,10 +66,8 @@ def run_pipeline():
         dataset_name="analytics_data"
     )
     
-    # Baca data bersih dari DuckDB
     final_data = conn.execute("SELECT * FROM clean_data").fetchall()
     
-    # Kirim ke Neon
     load_info = pipeline_load.run(
         dlt.resource(final_data, name="clean_dataset", write_disposition="replace"),
         table_name="clean_dataset"
@@ -66,7 +76,6 @@ def run_pipeline():
     print("🎉 Data final berhasil masuk ke Neon!")
     print(load_info)
     
-    # Tutup koneksi
     conn.close()
 
 if __name__ == "__main__":
