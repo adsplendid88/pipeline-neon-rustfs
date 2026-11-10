@@ -16,21 +16,7 @@ env:
   SOURCES__FILESYSTEM__CREDENTIALS__AWS_SECRET_ACCESS_KEY: ${{ secrets.SOURCES__FILESYSTEM__CREDENTIALS }}
 
 jobs:
-  maybe_skip:
-    runs-on: ubuntu-latest
-    outputs:
-      should_skip: ${{ steps.skip_check.outputs.should_skip }}
-    steps:
-      - id: skip_check
-        uses: fkirc/skip-duplicate-actions@v5
-        with:
-          concurrent_skipping: always
-          skip_after_successful_duplicate: 'false'
-          do_not_skip: '[]'
-          
   run_pipeline:
-    needs: maybe_skip
-    if: needs.maybe_skip.outputs.should_skip != 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Check out
@@ -44,4 +30,4 @@ jobs:
       - run: pip install -r requirements_github_action.txt
 
       - name: Run pipeline script
-        run: python 'pipeline.py' 
+        run: python 'pipeline.py'
