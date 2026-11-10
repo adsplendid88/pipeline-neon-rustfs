@@ -25,15 +25,11 @@ jobs:
 
       - name: Run DLT Pipeline
         env:
-          # Mapping Secret RustFS (S3 Compatible) ke Environment Variables dlt
           SOURCES__FILESYSTEM__CREDENTIALS__AWS_ACCESS_KEY_ID: ${{ secrets.SOURCES__FILESYSTEM__CREDENTIALS__AWS_ACCESS_KEY_ID }}
           SOURCES__FILESYSTEM__CREDENTIALS__AWS_SECRET_ACCESS_KEY: ${{ secrets.SOURCES__FILESYSTEM__CREDENTIALS__AWS_SECRET_ACCESS_KEY }}
           SOURCES__FILESYSTEM__CREDENTIALS__ENDPOINT_URL: ${{ secrets.RUSTFS_ENDPOINT_URL }}
           SOURCES__FILESYSTEM__CREDENTIALS__REGION_NAME: ${{ secrets.RUSTFS_REGION }}
           SOURCES__FILESYSTEM__CREDENTIALS__AWS_S3_USE_PATH_STYLE: ${{ secrets.RUSTFS_USE_PATH_STYLE }}
-          
-          # Mapping Secret Neon (Postgres)
           DESTINATION__POSTGRES__CREDENTIALS: ${{ secrets.NEON_DB_URL }}
-          
         run: |
           python pipeline.py 
