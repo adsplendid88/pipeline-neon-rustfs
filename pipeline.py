@@ -9,26 +9,62 @@ HF_API_URL = "https://api-inference.huggingface.co/models/cardiffnlp/twitter-rob
 def get_hf_token():
     token = os.environ.get('HUGGINGFACE_API_TOKEN')
     if not token:
-        raise ValueError("❌ HUGGINGFACE_API_TOKEN tidak ditemukan!")
+        print("⚠️ WARNING: HUGGINGFACE_API_TOKEN tidak ditemukan!")
+        return None
     return token
 
 def analyze_sentiment(text, hf_token):
+    """Analisis sentimen dengan error handling yang lebih baik"""
+    if not hf_token:
+        return "NO_TOKEN", 0.0
+    
     headers = {"Authorization": f"Bearer {hf_token}"}
+    
     try:
-        response = requests.post(HF_API_URL, headers=headers, json={"inputs": text[:512]})
+        print(f"      📤 Mengirim ke API: '{text[:50]}...'")
+        response = requests.post(
+            HF_API_URL, 
+            headers=headers, 
+            json={"inputs": text[:512]},
+            timeout=30  # Tambah timeout 30 detik
+        )
+        
+        print(f"      📥 Status code: {response.status_code}")
+        
+        # Handle model loading (status 503)
         if response.status_code == 503:
-            print("      ⏳ Model loading, tunggu 20 detik...")
-            time.sleep(20)
-            response = requests.post(HF_API_URL, headers=headers, json={"inputs": text[:512]})
+            print("      ⏳ Model sedang loading, tunggu 30 detik...")
+            time.sleep(30)
+            response = requests.post(
+                HF_API_URL, 
+                headers=headers, 
+                json={"inputs": text[:512]},
+                timeout=30
+            )
+        
+        # Handle error lainnya
+        if response.status_code != 200:
+            print(f"      ⚠️ API error: {response.status_code} - {response.text}")
+            return f"API_ERROR_{response.status_code}", 0.0
+        
         result = response.json()
+        print(f"      📦 Response: {result}")
+        
+        # Parse hasil
         if isinstance(result, list) and len(result) > 0:
             scores = result[0]
             best = max(scores, key=lambda x: x['score'])
             return best['label'], round(best['score'], 4)
-        return "UNKNOWN", 0.0
+        else:
+            print(f"      ⚠️ Response format tidak dikenali: {result}")
+            return "UNKNOWN", 0.0
+            
+    except requests.exceptions.Timeout:
+        print("      ⚠️ Request timeout!")
+        return "TIMEOUT", 0.0
     except Exception as e:
-        print(f"      ⚠️ Error: {e}")
-        return "ERROR", 0.0
+        print(f"      ⚠️ Error: {type(e).__name__}: {str(e)}")
+        return f"ERROR_{type(e).__name__}", 0.0
 
 def run_pipeline():
     print("=" * 60)
@@ -61,14 +97,19 @@ def run_pipeline():
     # TAHAP 2: AI Sentiment Analysis
     print("\n🤖 TAHAP 2: Analisis sentimen...")
     hf_token = get_hf_token()
+    
+    if hf_token:
+        print("✅ Token Hugging Face ditemukan.")
+    else:
+        print("❌ Token tidak ditemukan! Sentimen akan diisi 'NO_TOKEN'")
+    
     rows = conn.execute("SELECT id, employee_name, feedback_text, department FROM raw_data").fetchall()
     
-    # PENTING: Gunakan LIST OF DICTIONARIES!
     enriched_data = []
     for idx, (emp_id, emp_name, feedback, dept) in enumerate(rows, 1):
-        print(f"   [{idx}/{len(rows)}] {emp_name}...")
+        print(f"\n   [{idx}/{len(rows)}] {emp_name}:")
         sentiment, confidence = analyze_sentiment(feedback, hf_token)
-        print(f"      → {sentiment} ({confidence})")
+        print(f"      ✅ Hasil: {sentiment} (confidence: {confidence})")
         
         enriched_data.append({
             'id': int(emp_id),
@@ -78,7 +119,7 @@ def run_pipeline():
             'sentiment': sentiment,
             'confidence_score': confidence
         })
-        time.sleep(1)
+        time.sleep(2)  # Tambah delay untuk hindari rate limit
     
     print(f"\n✅ {len(enriched_data)} feedback dianalisis.")
 
@@ -90,7 +131,6 @@ def run_pipeline():
         dataset_name="hr_ai_analytics"
     )
     
-    # Kirim LANGSUNG list of dicts (tanpa dlt.resource)
     load_info = pipeline_load.run(
         enriched_data,
         table_name="employee_sentiment",
