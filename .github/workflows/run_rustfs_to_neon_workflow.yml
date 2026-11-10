@@ -1,9 +1,9 @@
-name: Run Data Pipeline (RustFS -> DuckDB -> Neon)
+name: Run Data Pipeline (GitHub CSV -> DuckDB -> Neon)
 
 on:
-  workflow_dispatch: # Untuk run manual
+  workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *' # Otomatis setiap 24 jam (08:00 WIB)
+   - cron: '0 1 * * *'  # 01:00 UTC = 08:00 WIB
 
 jobs:
   run_pipeline:
@@ -20,22 +20,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Install dlt dengan plugin duckdb, postgres, dan s3
-          pip install "dlt[duckdb,postgres,s3]"
-          # Install DuckDB
+          pip install "dlt[postgres]"
           pip install duckdb
 
       - name: Run Data Pipeline
         env:
-          # Credentials RustFS
-          SOURCES__FILESYSTEM__CREDENTIALS__AWS_ACCESS_KEY_ID: ${{ secrets.SOURCES__FILESYSTEM__CREDENTIALS__AWS_ACCESS_KEY_ID }}
-          SOURCES__FILESYSTEM__CREDENTIALS__AWS_SECRET_ACCESS_KEY: ${{ secrets.SOURCES__FILESYSTEM__CREDENTIALS__AWS_SECRET_ACCESS_KEY }}
-          SOURCES__FILESYSTEM__CREDENTIALS__ENDPOINT_URL: ${{ secrets.RUSTFS_ENDPOINT_URL }}
-          SOURCES__FILESYSTEM__CREDENTIALS__REGION_NAME: ${{ secrets.RUSTFS_REGION }}
-          SOURCES__FILESYSTEM__CREDENTIALS__AWS_S3_USE_PATH_STYLE: ${{ secrets.RUSTFS_USE_PATH_STYLE }}
-          
-          # Credentials Neon
           DESTINATION__POSTGRES__CREDENTIALS: ${{ secrets.NEON_DB_URL }}
-          
         run: |
           python pipeline.py
