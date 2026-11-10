@@ -8,67 +8,56 @@ def run_pipeline():
     # ==========================================
     # TAHAP 1: EXTRACT (RustFS ke DuckDB)
     # ==========================================
-    # dlt menarik data dari RustFS dan menyimpannya ke DuckDB lokal
     pipeline_extract = dlt.pipeline(
         pipeline_name="rustfs_to_duckdb",
         destination="duckdb",
         dataset_name="raw_data"
     )
     
-    # Ganti bucket_url dengan path folder data mentah kamu di RustFS
-    # Contoh: "s3://my-bucket/hr_data/" atau "s3://my-bucket/sales/"
-    data = filesystem(
-       bucket_url="s3://test-bucket/", 
-        file_glob="*.csv"  # Sesuaikan: *.csv, *.json, *.parquet
-    )
+    # PENTING: Beri nama resource secara eksplisit agar nama tabel di DuckDB jelas
+    # Kita beri nama "csv_files", jadi tabelnya nanti bernama 'csv_files'
+    source_files = filesystem(
+        bucket_url="s3://test-bucket/", 
+        file_glob="*.csv"
+    ).with_name("csv_files")
     
-    pipeline_extract.run(data)
+    pipeline_extract.run(source_files)
     print("✅ Data mentah berhasil ditarik dari RustFS ke DuckDB.")
+    
+    # Hapus variabel python ini agar tidak bentrok dengan DuckDB saat query SQL
+    del source_files
 
     # ==========================================
     # TAHAP 2: TRANSFORM (DuckDB SQL)
     # ==========================================
-    # Koneksi ke file DuckDB yang baru saja dibuat
+    # Koneksi ke file DuckDB lokal yang dibuat oleh dlt
     conn = duckdb.connect('rustfs_to_duckdb.duckdb')
     
-    # Contoh Transformasi 1: Bersihkan data (hapus baris kosong/null)
     print("🧹 Membersihkan data dengan DuckDB...")
+    
+    # Query SQL: Ambil semua data dari tabel 'csv_files' di schema 'raw_data'
+    # (Sesuaikan WHERE clause jika perlu, contoh di bawah ini mengambil semua baris)
     conn.execute("""
         CREATE OR REPLACE TABLE clean_data AS 
         SELECT * 
-        FROM raw_data.data 
-        WHERE id IS NOT NULL 
-          AND id != ''
+        FROM raw_data.csv_files
     """)
-    
-    # Contoh Transformasi 2: Agregasi (jika perlu)
-    # conn.execute("""
-    #     CREATE OR REPLACE TABLE aggregated_data AS
-    #     SELECT 
-    #         department,
-    #         COUNT(*) as total_records,
-    #         AVG(salary) as avg_salary
-    #     FROM clean_data
-    #     GROUP BY department
-    # """)
     
     print("✅ Data berhasil ditransformasi di DuckDB.")
 
     # ==========================================
     # TAHAP 3: LOAD (DuckDB ke Neon)
     # ==========================================
-    # dlt membaca tabel hasil transformasi dari DuckDB dan mengirim ke Neon
     pipeline_load = dlt.pipeline(
         pipeline_name="duckdb_to_neon",
         destination="postgres",
         dataset_name="analytics_data"
     )
     
-    # Baca data dari DuckDB
+    # Baca data bersih dari DuckDB
     final_data = conn.execute("SELECT * FROM clean_data").fetchall()
     
-    # Load ke Neon dengan write_disposition="replace" (ganti data lama)
-    # Atau "append" jika ingin menambah data baru saja
+    # Kirim ke Neon
     load_info = pipeline_load.run(
         dlt.resource(final_data, name="clean_dataset", write_disposition="replace"),
         table_name="clean_dataset"
@@ -77,7 +66,7 @@ def run_pipeline():
     print("🎉 Data final berhasil masuk ke Neon!")
     print(load_info)
     
-    # Tutup koneksi DuckDB
+    # Tutup koneksi
     conn.close()
 
 if __name__ == "__main__":
